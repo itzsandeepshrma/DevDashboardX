@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="en" class="scroll-smooth">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>DevDashboardX - GitHub Profile Analyzer</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  </head>
+  <body class="bg-gray-50 dark:bg-gray-900 text-gray-800 dark:text-gray-200 min-h-screen flex flex-col">
+    <header class="p-4 shadow-md bg-white dark:bg-gray-800 flex justify-between items-center">
+      <h1 class="text-2xl font-bold">DevDashboardX</h1>
+      <button id="toggleDark" class="px-3 py-1 border rounded dark:border-gray-300 border-gray-700 hover:bg-gray-200 dark:hover:bg-gray-700 transition">
+        Dark Mode
+      </button>
+    </header>
+
+    <main class="flex-grow container mx-auto p-4 max-w-4xl">
+      <form id="userForm" class="mb-6 flex gap-2">
+        <input
+          id="usernameInput"
+          type="text"
+          placeholder="Enter GitHub username"
+          required
+          class="flex-grow rounded border border-gray-300 dark:border-gray-600 px-4 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:bg-gray-700"
+        />
+        <button
+          type="submit"
+          class="bg-indigo-600 text-white px-4 rounded hover:bg-indigo-700 transition"
+        >
+          Search
+        </button>
+      </form>
+
+      <div id="loading" class="hidden text-center my-4">Loading...</div>
+      <div id="error" class="hidden text-red-500 my-4"></div>
+
+      <section id="profile" class="hidden bg-white dark:bg-gray-800 rounded shadow p-6 mb-6 flex gap-6">
+        <img id="avatar" alt="Avatar" class="w-24 h-24 rounded-full object-cover" />
+        <div>
+          <h2 id="name" class="text-xl font-semibold"></h2>
+          <p id="bio" class="mb-2 text-gray-600 dark:text-gray-400"></p>
+          <p><strong>Followers:</strong> <span id="followers"></span></p>
+          <p><strong>Following:</strong> <span id="following"></span></p>
+          <p><strong>Public Repos:</strong> <span id="publicRepos"></span></p>
+          <a id="profileUrl" href="#" target="_blank" class="inline-block mt-2 text-indigo-600 hover:underline">View on GitHub</a>
+        </div>
+      </section>
+
+      <section id="charts" class="hidden space-y-10">
+        <div>
+          <h3 class="text-lg font-semibold mb-2">Stars per Repository</h3>
+          <canvas id="starsChart" class="bg-white dark:bg-gray-800 rounded p-4 shadow"></canvas>
+        </div>
+        <div>
+          <h3 class="text-lg font-semibold mb-2">Languages Used</h3>
+          <canvas id="langChart" class="bg-white dark:bg-gray-800 rounded p-4 shadow"></canvas>
+        </div>
+      </section>
+    </main>
+
+    <footer class="p-4 text-center text-sm text-gray-500 dark:text-gray-400">
+      &copy; 𝟤𝟢𝟤𝟧 sᴧɴᴅᴇᴇᴘ sʜᴧʀᴍᴧ ᴧʟʟ ʀɪɢʜᴛs ʀᴇsᴇʀᴠᴇᴅ
+    </footer>
+
+    <script>
+      const toggleDarkBtn = document.getElementById('toggleDark');
+      toggleDarkBtn.addEventListener('click', () => {
+        document.documentElement.classList.toggle('dark');
+        toggleDarkBtn.textContent = document.documentElement.classList.contains('dark') ? 'Light Mode' : 'Dark Mode';
+      });
+
+      const form = document.getElementById('userForm');
+      const input = document.getElementById('usernameInput');
+      const loading = document.getElementById('loading');
+      const errorDiv = document.getElementById('error');
+      const profileSection = document.getElementById('profile');
+      const chartsSection = document.getElementById('charts');
+
+      const avatarImg = document.getElementById('avatar');
+      const nameEl = document.getElementById('name');
+      const bioEl = document.getElementById('bio');
+      const followersEl = document.getElementById('followers');
+      const followingEl = document.getElementById('following');
+      const publicReposEl = document.getElementById('publicRepos');
+      const profileUrlEl = document.getElementById('profileUrl');
+
+      let starsChartInstance = null;
+      let langChartInstance = null;
+
+      form.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const username = input.value.trim();
+        if (!username) return;
+
+        errorDiv.classList.add('hidden');
+        profileSection.classList.add('hidden');
+        chartsSection.classList.add('hidden');
+        loading.classList.remove('hidden');
+        loading.textContent = 'Loading...';
+
+        try {
+          const profileRes = await fetch(`https://api.github.com/users/${username}`);
+          if (!profileRes.ok) throw new Error('User not found');
+          const profile = await profileRes.json();
+
+          let repos = [];
+          let page = 1;
+          while (true) {
+            const repoRes = await fetch(`https://api.github.com/users/${username}/repos?per_page=100&page=${page}`);
+            if (!repoRes.ok) break;
+            const data = await repoRes.json();
+            if (data.length === 0) break;
+            repos = repos.concat(data);
+            if (data.length < 100) break;
+            page++;
+          }
+
+          avatarImg.src = profile.avatar_url;
+          nameEl.textContent = profile.name || profile.login;
+          bioEl.textContent = profile.bio || '';
+          followersEl.textContent = profile.followers;
+          followingEl.textContent = profile.following;
+          publicReposEl.textContent = profile.public_repos;
+          profileUrlEl.href = profile.html_url;
+
+          profileSection.classList.remove('hidden');
+
+          const starsData = repos.map(r => ({ name: r.name, stars: r.stargazers_count }));
+          starsData.sort((a, b) => b.stars - a.stars);
+          const topStars = starsData.slice(0, 10);
+
+          const langCount = {};
+          repos.forEach(r => {
+            if (r.language) langCount[r.language] = (langCount[r.language] || 0) + 1;
+          });
+
+          const starsCtx = document.getElementById('starsChart').getContext('2d');
+          if (starsChartInstance) starsChartInstance.destroy();
+          starsChartInstance = new Chart(starsCtx, {
+            type: 'bar',
+            data: {
+              labels: topStars.map(r => r.name),
+              datasets: [{
+                label: 'Stars',
+                data: topStars.map(r => r.stars),
+                backgroundColor: 'rgba(99, 102, 241, 0.7)',
+                borderRadius: 5,
+                borderSkipped: false
+              }]
+            },
+            options: {
+              responsive: true,
+              plugins: {
+                legend: { display: false },
+                tooltip: { mode: 'index', intersect: false }
+              },
+              scales: {
+                y: { beginAtZero: true, ticks: { stepSize: 1 } }
+              }
+            }
+          });
+
+          const langCtx = document.getElementById('langChart').getContext('2d');
+          if (langChartInstance) langChartInstance.destroy();
+          langChartInstance = new Chart(langCtx, {
+            type: 'doughnut',
+            data: {
+              labels: Object.keys(langCount),
+              datasets: [{
+                label: 'Repositories',
+                data: Object.values(langCount),
+                backgroundColor: [
+                  '#6366F1', '#EF4444', '#10B981', '#F59E0B', '#3B82F6',
+                  '#8B5CF6', '#EC4899', '#14B8A6', '#F97316', '#22C55E'
+                ],
+                borderWidth: 1
+              }]
+            },
+            options: {
+              responsive: true,
+              plugins: {
+                legend: { position: 'right' }
+              }
+            }
+          });
+
+          chartsSection.classList.remove('hidden');
+
+        } catch (err) {
+          errorDiv.textContent = err.message;
+          errorDiv.classList.remove('hidden');
+        } finally {
+          loading.classList.add('hidden');
+        }
+      });
+    </script>
+  </body>
+</html>
